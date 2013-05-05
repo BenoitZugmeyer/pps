@@ -126,8 +126,10 @@ sub print_page { #0: reference to results array; 1: index of the first element
 			print "(☠)";
 			print color 'reset';
 		}
-		print " (@$_[SIZE_VALUE] @$_[SIZE_UNIT])";
-		print " (@$_[SEEDERS]/@$_[LEECHERS])";
+		print " (@$_[SIZE_VALUE] @$_[SIZE_UNIT]) ";
+		print color 'white on_red' if(@$_[SEEDERS] == 0);
+		print "(@$_[SEEDERS]/@$_[LEECHERS])";
+		print color 'reset' if(@$_[SEEDERS] == 0);
 		if(@$_[COMMENTS] > 0) {
 			print " ";
 			print colored ("(@$_[COMMENTS])", 'black on_yellow');
