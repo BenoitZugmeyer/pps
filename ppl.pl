@@ -24,7 +24,7 @@ $Getopt::Std::STANDARD_HELP_VERSION = 1;
 $Term::ANSIColor::EACHLINE = "\n";
 
 sub HELP_MESSAGE {
-	print "Usage: blah.pl keyword [options]\n";
+	print "Usage: ppl.pl keyword [options]\n";
 	print "Accepted options:\n";
 	print "    -i : Show additional information (uploader, date of upload and category).\n";
 	print "    -s : Sort results by number of seeders (descending order).\n";
@@ -44,8 +44,9 @@ sub HELP_MESSAGE {
 	print "Default sorting oprtion is ascending number of seeders.\n";
 	print "If more than one sorting option is chosen, only the first will be used.\n";
 }
-sub VERSION_MESSAGE { print "PPS (Perl Pirate Search) version 0.1\n";} #TODO
+sub VERSION_MESSAGE { print "PPS (Perl Pirate Search) version 1.0\n";}
 
+if(@ARGV == 0) { VERSION_MESSAGE(); HELP_MESSAGE(); exit 1; }
 my $keyword = shift;
 my %opts;
 getopts("iSLslc", \%opts);
