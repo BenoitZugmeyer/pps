@@ -44,7 +44,7 @@ sub HELP_MESSAGE {
 	print "Default sorting oprtion is ascending number of seeders.\n";
 	print "If more than one sorting option is chosen, only the first will be used.\n";
 }
-sub VERSION_MESSAGE { print "version\n";} #TODO
+sub VERSION_MESSAGE { print "PPS (Perl Pirate Search) version 0.1\n";} #TODO
 
 my $keyword = shift;
 my %opts;
@@ -64,6 +64,7 @@ elsif(defined $opts{z}) {	$sort = 5;	}
 elsif(defined $opts{Z}) {	$sort = 6;	}
 elsif(defined $opts{u}) {	$sort = 11;	}
 elsif(defined $opts{U}) {	$sort = 12;	}
+my @results_cache;
 
 sub download_page {#0: keywork; 1: page_num; 2: sort
 	print "Downloading data...\n";
@@ -99,7 +100,7 @@ sub download_page {#0: keywork; 1: page_num; 2: sort
 		my $seeders = $17;
 		my $leechers = $18;
 
-		$title =~ s/\&amp;/\&/;
+		$title =~ s/\&amp;/\&/; # Ampersands do weird stuff.
 
 		my @result = ($title, $category, $sub_category, $magnet, $comments, $rank, $date, $date_year_time, $size_value, $size_unit, $uploader, $seeders, $leechers);
 		push @results, [@result];
@@ -112,9 +113,7 @@ sub print_page { #0: reference to results array; 1: index of the first element
 	my $index = $_[1];
 	foreach(@results) {
 		print "$index: ";
-		if($index < 10) {
-			print " ";
-		}
+		print " " if($index < 10);
 		print colored ("@$_[TITLE]", 'bold');
 		print " (@$_[SEEDERS]/@$_[LEECHERS])";
 		if(@$_[COMMENTS] > 0) {
@@ -132,9 +131,7 @@ sub print_page { #0: reference to results array; 1: index of the first element
 			elsif(@$_[RANK]	eq "Moderator")		{print color 'black on_white';}
 			print "@$_[UPLOADER]";
 			print color 'reset';
-			if(@$_[DATE] =~ /\d\d-\d\d/) {
-				print " on date";
-			}
+			print " on date" if(@$_[DATE] =~ /\d\d-\d\d/);
 			print " @$_[DATE]";
 			if(@$_[DATE_YEAR_TIME] =~ /\d\d:\d\d/) {
 				print " at ";
@@ -144,25 +141,26 @@ sub print_page { #0: reference to results array; 1: index of the first element
 			print "@$_[DATE_YEAR_TIME]";
 			print " to category @$_[CATEGORY]/@$_[SUB_CATEGORY].\n";
 		}
-
 		$index ++;
 	}
 }
 
-sub read_input {
-
-}
 sub do_page { #0: page number
 	my $page_num = $_[0];
-	my @results = download_page($keyword, $page_num, $sort);
+	my @results;
+	if(defined $results_cache[$page_num]) {
+		@results = @{$results_cache[$page_num]};
+	} else {
+		@results = download_page($keyword, $page_num, $sort);
+		$results_cache[$page_num] = \@results;
+	}
 	print_page(\@results, 1 + 30 * $page_num);
-	print "Insert 'n' for next page. Insert 'p' for previous page.\n";
-	print "Insert the numbers of the files you would like to download: ";
+	print "Enter 'n' for next page. Enter 'p' for previous page.\n";
+	print "Enter 'w' to wipe the cache and reload the page. Enter 'x' to exit.\n";
+	print "Enter the numbers of the files you would like to download: ";
 	my $downloads = 0;
 	for(;;) {
-		if($downloads > 0) {
-			exit 0;
-		}
+		exit 0 if($downloads > 0);
 		my $input = <STDIN>;
 		my @selected = split /\s+/, "$input";
 		foreach(@selected) {
@@ -175,12 +173,20 @@ sub do_page { #0: page number
 				} else {
 					print "There are no more pages.\n";
 				}
+				last;
 			} elsif($_ eq "p") {
 				if($page_num > 0) {
 					do_page($page_num - 1);
 				} else {
 					print "There are no previous pages.\n";
 				}
+				last;
+			} elsif($_ eq "x") {
+				exit 0;
+			} elsif($_ eq "w") {
+				@results_cache = ();
+				do_page($page_num);
+				last;
 			}
 		}
 	}
