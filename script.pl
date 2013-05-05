@@ -18,6 +18,7 @@ use constant SIZE_UNIT => 9;
 use constant UPLOADER => 10;
 use constant SEEDERS => 11;
 use constant LEECHERS => 12;
+use constant BASEURL => "http://thepiratebay.se/search";
 
 $Getopt::Std::STANDARD_HELP_VERSION = 1;
 $Term::ANSIColor::EACHLINE = "\n";
@@ -25,19 +26,48 @@ $Term::ANSIColor::EACHLINE = "\n";
 sub HELP_MESSAGE {
 	print "Usage: blah.pl keyword [options]\n";
 	print "Accepted options:\n";
-	print "    -i  : Show additional information (uploader, date of upload and category).";
+	print "    -i : Show additional information (uploader, date of upload and category).\n";
+	print "    -s : Sort results by number of seeders (descending order).\n";
+	print "    -S : Sort results by number of seeders (ascending order).\n";
+	print "    -l : Sort results by number of leechers (descending order).\n";
+	print "    -L : Sort results by number of leechers (ascending order).\n";
+	print "    -c : Sort results by category (descending order).\n";
+	print "    -C : Sort results by category (ascending order).\n";
+	print "    -n : Sort results by name (descending order).\n";
+	print "    -N : Sort results by name (ascending order).\n";
+	print "    -d : Sort results by upload date (descending order).\n";
+	print "    -D : Sort results by upload date (ascending order).\n";
+	print "    -z : Sort results by size (descending order).\n";
+	print "    -Z : Sort results by size (ascending order).\n";
+	print "    -u : Sort results by uploader (descending order).\n";
+	print "    -U : Sort results by uploader (ascending order).\n";
+	print "Default sorting oprtion is ascending number of seeders.\n";
+	print "If more than one sorting option is chosen, only the first will be used.\n";
 }
 sub VERSION_MESSAGE { print "version\n";} #TODO
 
 my $keyword = shift;
 my %opts;
-getopts("i", \%opts);
-my $baseurl = "http://thepiratebay.se/search";
-my $suffix = "";
+getopts("iSLslc", \%opts);
+my $sort = 7;
+if(defined $opts{s})	{	$sort = 7;	}
+elsif(defined $opts{S})	{	$sort = 8;	}
+elsif(defined $opts{l}) {	$sort = 9;	}
+elsif(defined $opts{L}) {	$sort = 10;	}
+elsif(defined $opts{c}) {	$sort = 13;	}
+elsif(defined $opts{C}) {	$sort = 14;	}
+elsif(defined $opts{n}) {	$sort = 1;	}
+elsif(defined $opts{N}) {	$sort = 2;	}
+elsif(defined $opts{d}) {	$sort = 3;	}
+elsif(defined $opts{D}) {	$sort = 4;	}
+elsif(defined $opts{z}) {	$sort = 5;	}
+elsif(defined $opts{Z}) {	$sort = 6;	}
+elsif(defined $opts{u}) {	$sort = 11;	}
+elsif(defined $opts{U}) {	$sort = 12;	}
 
-sub download_page {
+sub download_page {#0: keywork; 1: page_num; 2: sort
 	print "Downloading data...\n";
-	my $url = "$baseurl/$keyword$suffix";
+	my $url = BASEURL . "/$_[0]/$_[1]/$_[2]/0";
 	my $page = get "$url" or die "Error getting web: $url";
 	my @results;
 	while($page =~ /category\">(.*?)<[\s\S]*?category\">(.*?)<[\s\S]*?Details for (.+?)\"[^\"]*\"(magnet:\?.+?)\"(.*This torrent has (\d+) comments)?(.*VIP)?(.*Trusted)?(.*Helper)?(.*Moderator)?(.*Admin)?[\s\S]*?Uploaded ([^&]+?)&nbsp;(\d\d:?\d\d).*?Size (.+?)\&nbsp;(.*?B).*>(.+?)<[\s\S]*?(\d+)[\s\S]*?(\d+)/g) {
@@ -77,7 +107,7 @@ sub download_page {
 	return @results;
 }
 
-sub print_page { #arg: reference to results array, index of the first element
+sub print_page { #0: reference to results array; 1: index of the first element
 	my @results = @{$_[0]};
 	my $index = $_[1];
 	foreach(@results) {
@@ -122,10 +152,9 @@ sub print_page { #arg: reference to results array, index of the first element
 sub read_input {
 
 }
-sub do_page { #args: page number
+sub do_page { #0: page number
 	my $page_num = $_[0];
-	$suffix = "/$page_num/7/0";
-	my @results = download_page();
+	my @results = download_page($keyword, $page_num, $sort);
 	print_page(\@results, 1 + 30 * $page_num);
 	print "Insert 'n' for next page. Insert 'p' for previous page.\n";
 	print "Insert the numbers of the files you would like to download: ";
@@ -140,10 +169,18 @@ sub do_page { #args: page number
 			if($_ =~ /\d+/ && $_ > 0 && $_ <= $#results) {
 				system("xdg-open $results[$_ - 1 - 30 * $page_num][MAGNET] >/dev/null 2>&1");
 				$downloads ++;
-			} elsif($_ eq "n" && $#results > 0) {
-				do_page($page_num + 1);
-			} elsif($_ eq "p" && $page_num > 0) {
-				do_page($page_num - 1);
+			} elsif($_ eq "n") {
+				if($#results > 0) {
+					do_page($page_num + 1);
+				} else {
+					print "There are no more pages.\n";
+				}
+			} elsif($_ eq "p") {
+				if($page_num > 0) {
+					do_page($page_num - 1);
+				} else {
+					print "There are no previous pages.\n";
+				}
 			}
 		}
 	}
