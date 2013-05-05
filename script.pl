@@ -1,12 +1,10 @@
 #!/usr/bin/perl
-
-
-use feature ':5.10';
-use warnings;
 use strict;
-use feature "switch";
+use warnings;
+use Getopt::Std;
 use LWP::Simple;
 use Term::ANSIColor;
+
 use constant TITLE => 0;
 use constant CATEGORY => 1;
 use constant SUB_CATEGORY => 2;
@@ -21,17 +19,26 @@ use constant UPLOADER => 10;
 use constant SEEDERS => 11;
 use constant LEECHERS => 12;
 
+$Getopt::Std::STANDARD_HELP_VERSION = 1;
+$Term::ANSIColor::EACHLINE = "\n";
 
-if(@ARGV != 1) {
-	print "Usage: my_program keyword\n";
-	exit 1;
+sub HELP_MESSAGE {
+	print "Usage: blah.pl keyword [options]\n";
+	print "Accepted options:\n";
+	print "    -i  : Show additional information (uploader, date of upload and category).";
 }
+sub VERSION_MESSAGE { print "version\n";} #TODO
 
-my $keyword = $ARGV[0];
+my $keyword = shift;
+my %opts;
+getopts("i", \%opts);
 my $baseurl = "http://thepiratebay.se/search";
-my $page = get "$baseurl/$keyword" or die "Error getting web.";
+my $suffix = "";
 
 sub download_page {
+	print "Downloading data...\n";
+	my $url = "$baseurl/$keyword$suffix";
+	my $page = get "$url" or die "Error getting web: $url";
 	my @results;
 	while($page =~ /category\">(.*?)<[\s\S]*?category\">(.*?)<[\s\S]*?Details for (.+?)\"[^\"]*\"(magnet:\?.+?)\"(.*This torrent has (\d+) comments)?(.*VIP)?(.*Trusted)?(.*Helper)?(.*Moderator)?(.*Admin)?[\s\S]*?Uploaded ([^&]+?)&nbsp;(\d\d:?\d\d).*?Size (.+?)\&nbsp;(.*?B).*>(.+?)<[\s\S]*?(\d+)[\s\S]*?(\d+)/g) {
 		my $category = $1;
@@ -70,9 +77,9 @@ sub download_page {
 	return @results;
 }
 
-sub print_page { #arg: reference to results array
+sub print_page { #arg: reference to results array, index of the first element
 	my @results = @{$_[0]};
-	my $index = 1;
+	my $index = $_[1];
 	foreach(@results) {
 		print "$index: ";
 		if($index < 10) {
@@ -85,35 +92,61 @@ sub print_page { #arg: reference to results array
 			print colored ("(@$_[COMMENTS])", 'black on_yellow');
 		}
 		print "\n";
-		print "    Uploaded by ";
-		if(@$_[RANK] eq "Trusted")			{print color 'white on_magenta';}
-		elsif(@$_[RANK]	eq "VIP")			{print color 'white on_green';}
-		elsif(@$_[RANK]	eq "Helper")		{print color 'white on_blue';}
-		elsif(@$_[RANK]	eq "Administrator")	{print color 'black on_white';}
-		elsif(@$_[RANK]	eq "Moderator")		{print color 'black on_white';}
-		print "@$_[UPLOADER]";
-		print color 'reset';
-		if(@$_[DATE] =~ /\d\d-\d\d/) {
-			print " on date";
+
+		if(defined $opts{i}) {
+			print "    Uploaded by ";
+			if(@$_[RANK] eq "Trusted")			{print color 'white on_magenta';}
+			elsif(@$_[RANK]	eq "VIP")			{print color 'white on_green';}
+			elsif(@$_[RANK]	eq "Helper")		{print color 'white on_blue';}
+			elsif(@$_[RANK]	eq "Administrator")	{print color 'black on_white';}
+			elsif(@$_[RANK]	eq "Moderator")		{print color 'black on_white';}
+			print "@$_[UPLOADER]";
+			print color 'reset';
+			if(@$_[DATE] =~ /\d\d-\d\d/) {
+				print " on date";
+			}
+			print " @$_[DATE]";
+			if(@$_[DATE_YEAR_TIME] =~ /\d\d:\d\d/) {
+				print " at ";
+			} else {
+				print "-";
+			}
+			print "@$_[DATE_YEAR_TIME]";
+			print " to category @$_[CATEGORY]/@$_[SUB_CATEGORY].\n";
 		}
-		print " @$_[DATE]";
-		if(@$_[DATE_YEAR_TIME] =~ /\d\d:\d\d/) {
-			print " at ";
-		} else {
-			print "-";
-		}
-		print "@$_[DATE_YEAR_TIME]";
-		print " to category @$_[CATEGORY]/@$_[SUB_CATEGORY].\n";
+
 		$index ++;
 	}
 }
 
-my @results = download_page();
-print_page(\@results);
-print "\nInsert the numbers of the files you would like to download: ";
-my $input = <STDIN>;
-my @selected = split /\s+/, "$input";
-foreach(@selected) {
-	my $index = $_ - 1;
-	system("xdg-open $results[$index][MAGNET] >/dev/null 2>&1");
+sub read_input {
+
 }
+sub do_page { #args: page number
+	my $page_num = $_[0];
+	$suffix = "/$page_num/7/0";
+	my @results = download_page();
+	print_page(\@results, 1 + 30 * $page_num);
+	print "Insert 'n' for next page. Insert 'p' for previous page.\n";
+	print "Insert the numbers of the files you would like to download: ";
+	my $downloads = 0;
+	for(;;) {
+		if($downloads > 0) {
+			exit 0;
+		}
+		my $input = <STDIN>;
+		my @selected = split /\s+/, "$input";
+		foreach(@selected) {
+			if($_ =~ /\d+/ && $_ > 0 && $_ <= $#results) {
+				system("xdg-open $results[$_ - 1 - 30 * $page_num][MAGNET] >/dev/null 2>&1");
+				$downloads ++;
+			} elsif($_ eq "n" && $#results > 0) {
+				do_page($page_num + 1);
+			} elsif($_ eq "p" && $page_num > 0) {
+				do_page($page_num - 1);
+			}
+		}
+	}
+}
+
+do_page 0
