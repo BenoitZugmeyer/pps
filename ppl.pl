@@ -116,6 +116,17 @@ sub print_page { #0: reference to results array; 1: index of the first element
 		print "$index: ";
 		print " " if($index < 10);
 		print colored ("@$_[TITLE]", 'bold');
+		if(@$_[RANK] ne "User") {
+			print " ";
+			if(@$_[RANK] eq "Trusted")			{print color 'bold white on_magenta';}
+			elsif(@$_[RANK]	eq "VIP")			{print color 'bold white on_green';}
+			elsif(@$_[RANK]	eq "Helper")		{print color 'bold white on_blue';}
+			elsif(@$_[RANK]	eq "Administrator")	{print color 'bold black on_white';}
+			elsif(@$_[RANK]	eq "Moderator")		{print color 'bold black on_white';}
+			print "(☠)";
+			print color 'reset';
+		}
+		print " (@$_[SIZE_VALUE] @$_[SIZE_UNIT])";
 		print " (@$_[SEEDERS]/@$_[LEECHERS])";
 		if(@$_[COMMENTS] > 0) {
 			print " ";
@@ -165,8 +176,8 @@ sub do_page { #0: page number
 		my $input = <STDIN>;
 		my @selected = split /\s+/, "$input";
 		foreach(@selected) {
-			if($_ =~ /\d+/ && $_ > 0 && $_ <= $#results) {
-				system("xdg-open $results[$_ - 1 - 30 * $page_num][MAGNET] >/dev/null 2>&1");
+			if($_ =~ /\d+/ && $_ > 0 && defined ${$results_cache[$page_num]}[$_ - 1 - 30 * $page_num] <= $#results) {
+				system("xdg-open ${$results_cache[$page_num]}[$_ - 1 - 30 * $page_num][MAGNET] >/dev/null 2>&1");
 				$downloads ++;
 			} elsif($_ eq "n") {
 				if($#results > 0) {
