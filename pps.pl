@@ -4,6 +4,10 @@ use warnings;
 use Getopt::Std;
 use LWP::Simple;
 use Term::ANSIColor;
+use threads('yield',
+			'stack_size' => 64*4096,
+			'exit' => 'threads_only',
+			'stringify');
 
 use constant TITLE => 0;
 use constant CATEGORY => 1;
@@ -66,9 +70,11 @@ elsif(defined $opts{Z}) {	$sort = 6;	}
 elsif(defined $opts{u}) {	$sort = 11;	}
 elsif(defined $opts{U}) {	$sort = 12;	}
 my @results_cache;
+my $last = 0;
+
 
 sub download_page {#0: keywork; 1: page_num; 2: sort
-	print "Downloading data...\n";
+	$SIG{'KILL'} = sub { threads->exit };
 	my $url = BASEURL . "/$_[0]/$_[1]/$_[2]/0";
 	my $page = get "$url" or die "Error getting web: $url";
 	my @results;
@@ -106,7 +112,8 @@ sub download_page {#0: keywork; 1: page_num; 2: sort
 		my @result = ($title, $category, $sub_category, $magnet, $comments, $rank, $date, $date_year_time, $size_value, $size_unit, $uploader, $seeders, $leechers);
 		push @results, [@result];
 	}
-	return @results;
+	$last = ! ($page =~ /\G.*next.gif.*/);
+	return \@results;
 }
 
 sub print_page { #0: reference to results array; 1: index of the first element
@@ -116,7 +123,7 @@ sub print_page { #0: reference to results array; 1: index of the first element
 		print "$index: ";
 		print " " if($index < 10);
 		print colored ("@$_[TITLE]", 'bold');
-		if(@$_[RANK] ne "User") {
+		if(! defined $opts{i} && @$_[RANK] ne "User") {
 			print " ";
 			if(@$_[RANK] eq "Trusted")			{print color 'bold white on_magenta';}
 			elsif(@$_[RANK]	eq "VIP")			{print color 'bold white on_green';}
@@ -165,7 +172,8 @@ sub do_page { #0: page number
 	if(defined $results_cache[$page_num]) {
 		@results = @{$results_cache[$page_num]};
 	} else {
-		@results = download_page($keyword, $page_num, $sort);
+		print "Downloading data...\n";
+		@results = @{download_page($keyword, $page_num, $sort)};
 		$results_cache[$page_num] = \@results;
 	}
 	print_page(\@results, 1 + 30 * $page_num);
@@ -173,6 +181,13 @@ sub do_page { #0: page number
 	print "Enter 'w' to wipe the cache and reload the page. Enter 'x' to exit.\n";
 	print "Enter the numbers of the files you would like to download: ";
 	my $downloads = 0;
+
+	my $thread_previous;
+	$thread_previous =	threads->create('download_page', $keyword, $page_num - 1, $sort) if($page_num > 1 && ! defined $results_cache[$page_num - 1]);
+	my $thread_next;
+	$thread_next=		threads->create('download_page', $keyword, $page_num + 1, $sort) if(! $last && ! defined $results_cache[$page_num + 1]);
+
+
 	for(;;) {
 		exit 0 if($downloads > 0);
 		my $input = <STDIN>;
@@ -182,7 +197,9 @@ sub do_page { #0: page number
 				system("xdg-open ${$results_cache[$page_num]}[$_ - 1 - 30 * $page_num][MAGNET] >/dev/null 2>&1");
 				$downloads ++;
 			} elsif($_ eq "n") {
-				if($#results > 0) {
+				if(! $last) {
+					$thread_previous->kill('KILL')->detach if(defined $thread_previous);
+					$results_cache[$page_num + 1] = $thread_next->join() if(defined $thread_next);
 					do_page($page_num + 1);
 				} else {
 					print "There are no more pages.\n";
@@ -190,12 +207,16 @@ sub do_page { #0: page number
 				last;
 			} elsif($_ eq "p") {
 				if($page_num > 0) {
+					$thread_next->kill('KILL')->detach if(defined $thread_next);
+					$results_cache[$page_num - 1] = $thread_previous->join() if(defined $thread_previous);
 					do_page($page_num - 1);
 				} else {
 					print "There are no previous pages.\n";
 				}
 				last;
 			} elsif($_ eq "x") {
+				$thread_previous->kill('KILL')->detach if (defined $thread_previous);
+				$thread_next->kill('KILL')->detach if (defined $thread_next);
 				exit 0;
 			} elsif($_ eq "w") {
 				@results_cache = ();
