@@ -70,13 +70,17 @@ elsif(defined $opts{Z}) {	$sort = 6;	}
 elsif(defined $opts{u}) {	$sort = 11;	}
 elsif(defined $opts{U}) {	$sort = 12;	}
 my @results_cache;
-my $last = 0;
+my $last_page;
 
 
 sub download_page {#0: keywork; 1: page_num; 2: sort
 	$SIG{'KILL'} = sub { threads->exit };
 	my $url = BASEURL . "/$_[0]/$_[1]/$_[2]/0";
 	my $page = get "$url" or die "Error getting web: $url";
+	if(! defined $last_page) {
+		$page =~ /approx (\d+)/g;
+		$last_page = int(int($1) / int(30));
+	}
 	my @results;
 	while($page =~ /category\">(.*?)<[\s\S]*?category\">(.*?)<[\s\S]*?Details for (.+?)\"[^\"]*\"(magnet:\?.+?)\"(.*This torrent has (\d+) comments)?(.*VIP)?(.*Trusted)?(.*Helper)?(.*Moderator)?(.*Admin)?[\s\S]*?Uploaded ([^&]+?)&nbsp;(\d\d:?\d\d).*?Size (.+?)\&nbsp;(.*?B).*>(.+?)<[\s\S]*?(\d+)[\s\S]*?(\d+)/g) {
 		my $category = $1;
@@ -112,7 +116,7 @@ sub download_page {#0: keywork; 1: page_num; 2: sort
 		my @result = ($title, $category, $sub_category, $magnet, $comments, $rank, $date, $date_year_time, $size_value, $size_unit, $uploader, $seeders, $leechers);
 		push @results, [@result];
 	}
-	$last = ! ($page =~ /\G.*next.gif.*/);
+	#$last = ! ($page =~ /\G.*next.gif.*/);
 	return \@results;
 }
 
@@ -178,14 +182,14 @@ sub do_page { #0: page number
 	}
 	print_page(\@results, 1 + 30 * $page_num);
 	print "Enter 'n' for next page. Enter 'p' for previous page.\n";
-	print "Enter 'w' to wipe the cache and reload the page. Enter 'x' to exit.\n";
+	print "Enter 'w' to wipe the cache and reload the page. Enter 'q' to quit.\n";
 	print "Enter the numbers of the files you would like to download: ";
 	my $downloads = 0;
 
 	my $thread_previous;
 	$thread_previous =	threads->create('download_page', $keyword, $page_num - 1, $sort) if($page_num > 1 && ! defined $results_cache[$page_num - 1]);
 	my $thread_next;
-	$thread_next=		threads->create('download_page', $keyword, $page_num + 1, $sort) if(! $last && ! defined $results_cache[$page_num + 1]);
+	$thread_next=		threads->create('download_page', $keyword, $page_num + 1, $sort) if($page_num < $last_page && ! defined $results_cache[$page_num + 1]);
 
 
 	for(;;) {
@@ -197,7 +201,7 @@ sub do_page { #0: page number
 				system("xdg-open ${$results_cache[$page_num]}[$_ - 1 - 30 * $page_num][MAGNET] >/dev/null 2>&1");
 				$downloads ++;
 			} elsif($_ eq "n") {
-				if(! $last) {
+				if($page_num < $last_page) {
 					$thread_previous->kill('KILL')->detach if(defined $thread_previous);
 					$results_cache[$page_num + 1] = $thread_next->join() if(defined $thread_next);
 					do_page($page_num + 1);
@@ -214,7 +218,7 @@ sub do_page { #0: page number
 					print "There are no previous pages.\n";
 				}
 				last;
-			} elsif($_ eq "x") {
+			} elsif($_ eq "q") {
 				$thread_previous->kill('KILL')->detach if (defined $thread_previous);
 				$thread_next->kill('KILL')->detach if (defined $thread_next);
 				exit 0;
