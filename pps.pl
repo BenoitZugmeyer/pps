@@ -1,205 +1,185 @@
 #!/usr/bin/perl
 use strict;
 use warnings;
-use Getopt::Std;
 use LWP::Simple;
 use Term::ANSIColor;
+use HTML::Entities;
+use Getopt::Std;
+use utf8;
+binmode(STDOUT, ":utf8");
 use threads('yield',
 			'stack_size' => 64*4096,
 			'exit' => 'threads_only',
 			'stringify');
 
-use constant TITLE => 0;
-use constant CATEGORY => 1;
-use constant SUB_CATEGORY => 2;
-use constant MAGNET => 3;
-use constant COMMENTS => 4;
-use constant RANK => 5;
-use constant DATE => 6;
-use constant DATE_YEAR_TIME => 7;
-use constant SIZE_VALUE => 8;
-use constant SIZE_UNIT => 9;
-use constant UPLOADER => 10;
-use constant SEEDERS => 11;
-use constant LEECHERS => 12;
-use constant BASEURL => "http://thepiratebay.se/search";
-
+# constants
+use constant BASEURL => scalar "http://thepiratebay.se/search";
+use constant COMMENTS_COLOR => scalar 'black on_yellow';
+use constant NO_SEEDERS_COLOR => scalar 'white on_red';
+use constant SKULL_CROSSBONES => scalar '(☠)';
+use constant DEFAULT_SORTING => scalar "s";
+my %SORTINGS = (
+	n => 1,
+	N => 2,
+	d => 3,
+	D => 4,
+	z => 5,
+	Z => 6,
+	s => 7,
+	S => 8,
+	l => 9,
+	L => 10,
+	u => 11,
+	U => 12,
+	c => 13,
+	C => 14
+);
+my %RANK_COLORS = (
+	Trusted			=> 'bold white on_magenta',
+	VIP				=> 'bold white on_green',
+	Helper			=> 'bold white on_blue',
+	Administrator	=> 'bold black on_white',
+	Moderator		=> 'bold black on_white'
+);
 $Getopt::Std::STANDARD_HELP_VERSION = 1;
 $Term::ANSIColor::EACHLINE = "\n";
 
+# argument handling
 sub HELP_MESSAGE {
-	print "Usage: ppl.pl keyword [options]\n";
-	print "Accepted options:\n";
+	print "Usage: $0 KEYWORDS [PARAMS]\n";
+	print "       $0 [PARAMS] KEYWORDS\n";
+	print "Accepted options for PARAMS are:\n";
+	print "    -h : Show this message\n";
 	print "    -i : Show additional information (uploader, date of upload and category).\n";
-	print "    -s : Sort results by number of seeders (descending order).\n";
-	print "    -S : Sort results by number of seeders (ascending order).\n";
-	print "    -l : Sort results by number of leechers (descending order).\n";
-	print "    -L : Sort results by number of leechers (ascending order).\n";
-	print "    -c : Sort results by category (descending order).\n";
-	print "    -C : Sort results by category (ascending order).\n";
-	print "    -n : Sort results by name (descending order).\n";
-	print "    -N : Sort results by name (ascending order).\n";
-	print "    -d : Sort results by upload date (descending order).\n";
-	print "    -D : Sort results by upload date (ascending order).\n";
-	print "    -z : Sort results by size (descending order).\n";
-	print "    -Z : Sort results by size (ascending order).\n";
-	print "    -u : Sort results by uploader (descending order).\n";
-	print "    -U : Sort results by uploader (ascending order).\n";
-	print "Default sorting oprtion is ascending number of seeders.\n";
-	print "If more than one sorting option is chosen, only the first will be used.\n";
+	print "    -s [SORTING]: Specify sorting method. Valid options for SORTING are:\n";
+	print "        n : Sort results by name (descending order).\n";
+	print "        N : Sort results by name (ascending order).\n";
+	print "        d : Sort results by date of upload (descending order).\n";
+	print "        D : Sort results by date of upload (ascending order).\n";
+	print "        z : Sort results by size (descending order).\n";
+	print "        Z : Sort results by size (ascending order).\n";
+	print "        s : Sort results by number of seeders (descending order).\n";
+	print "        S : Sort results by number of seeders (ascending order).\n";
+	print "        l : Sort results by number of leechers (descending order).\n";
+	print "        L : Sort results by number of leechers (ascending order).\n";
+	print "        u : Sort results by uploader (descending order).\n";
+	print "        U : Sort results by uploader (ascending order).\n";
+	print "        c : Sort results by category (descending order).\n";
+	print "        C : Sort results by category (ascending order).\n";
+	print "        Default sorting option is descending number of seeders (s).\n";
+	print "    -v : Show version number\n";
+	print "Remember that if your keywords contain spaces you must surround them in quotes.\n"
 }
-sub VERSION_MESSAGE { print "PPS (Perl Pirate Search) version 1.0\n";}
+sub VERSION_MESSAGE { print "PPS (Perl Pirate Search) version 1.1\n";}
 
 if(@ARGV == 0) { VERSION_MESSAGE(); HELP_MESSAGE(); exit 1; }
-my $keyword = shift;
-my %opts;
-getopts("iSLslc", \%opts);
-my $sort = 7;
-if(defined $opts{s})	{	$sort = 7;	}
-elsif(defined $opts{S})	{	$sort = 8;	}
-elsif(defined $opts{l}) {	$sort = 9;	}
-elsif(defined $opts{L}) {	$sort = 10;	}
-elsif(defined $opts{c}) {	$sort = 13;	}
-elsif(defined $opts{C}) {	$sort = 14;	}
-elsif(defined $opts{n}) {	$sort = 1;	}
-elsif(defined $opts{N}) {	$sort = 2;	}
-elsif(defined $opts{d}) {	$sort = 3;	}
-elsif(defined $opts{D}) {	$sort = 4;	}
-elsif(defined $opts{z}) {	$sort = 5;	}
-elsif(defined $opts{Z}) {	$sort = 6;	}
-elsif(defined $opts{u}) {	$sort = 11;	}
-elsif(defined $opts{U}) {	$sort = 12;	}
+my $kw_first = substr($ARGV[0], 0, 1) ne '-';
+my $keyword;
+if($kw_first) {
+	$keyword = shift;
+} else {
+	$keyword = $ARGV[$#ARGV]
+}
+if(! $kw_first && (substr($ARGV[-1], 0, 1) eq '-' || $ARGV[-2] eq '-s')) {
+	HELP_MESSAGE();
+	exit 1;
+}
+my %args;
+getopts("hivs:", \%args);
+VERSION_MESSAGE() if($args{v});
+HELP_MESSAGE() if($args{h});
+my $sorting = $SORTINGS{$args{s} // +DEFAULT_SORTING} // $SORTINGS{+DEFAULT_SORTING};
+
+# global vars
 my @results_cache;
 my $last_page;
 
-
-sub download_page {#0: keywork; 1: page_num; 2: sort
+#functions
+sub download_page {
+	(my $keyword, my $page_num, my $sorting) = @_;
 	$SIG{'KILL'} = sub { threads->exit };
-	my $url = BASEURL . "/$_[0]/$_[1]/$_[2]/0";
+	my $url = BASEURL . "/$keyword/$page_num/$sorting/0";
 	my $page = get "$url" or die "Error getting web: $url";
 	if(! defined $last_page) {
-		$page =~ /approx (\d+)/g;
+		$page =~ /approx (\d+?)/g;
 		$last_page = int(int($1) / int(30));
 	}
-	my @results;
-	while($page =~ /category\">(.*?)<[\s\S]*?category\">(.*?)<[\s\S]*?Details for (.+?)\"[^\"]*\"(magnet:\?.+?)\"(.*This torrent has (\d+) comments)?(.*VIP)?(.*Trusted)?(.*Helper)?(.*Moderator)?(.*Admin)?[\s\S]*?Uploaded ([^&]+?)&nbsp;(\d\d:?\d\d).*?Size (.+?)\&nbsp;(.*?B).*>(.+?)<[\s\S]*?(\d+)[\s\S]*?(\d+)/g) {
-		my $category = $1;
-		my $sub_category = $2;
-		my $title = $3;
-		my $magnet = $4;
-		my $comments = 0;
-		if(defined $6 && $6 ne '') {
-			$comments = $6;
-		}
-		my $rank = "User";
-		if(defined $7 && $7 ne '') {
-			$rank = "VIP";
-		} elsif(defined $8 && $8 ne '') {
-			$rank = "Trusted";
-		} elsif(defined $9 && $9 ne '') {
-			$rank = "Helper";
-		} elsif(defined $10 && $10 ne '') {
-			$rank = "Moderator";
-		} elsif(defined $11 && $11 ne '') {
-			$rank = "Administrator";
-		}
-		my $date = $12;
-		my $date_year_time = $13;
-		my $size_value = $14;
-		my $size_unit = $15;
-		my $uploader = $16;
-		my $seeders = $17;
-		my $leechers = $18;
-
-		$title =~ s/\&amp;/\&/; # Ampersands do weird stuff.
-
-		my @result = ($title, $category, $sub_category, $magnet, $comments, $rank, $date, $date_year_time, $size_value, $size_unit, $uploader, $seeders, $leechers);
-		push @results, [@result];
+	my @results_page;
+	while($page =~ /category\">(?<category>.*?)<[\s\S]*?category\">(?<sub_category>.*?)<[\s\S]*?Details for (?<title>.+?)\"[^\"]*\"(?<magnet>magnet:\?.+?)\"(?:.*This torrent has (?<comments>\d+) comments)?(?:.*?(?<rank>VIP|Trusted|Helper|Moderator|Admin))?[\s\S]*?Uploaded (?<date>[^&]+?)&nbsp;(?<date_year_time>\d\d:?\d\d).*?Size (?<size_value>.+?)\&nbsp;(?<size_unit>.*?B).*>(?<uploader>.+?)<[\s\S]*?(?<seeders>\d+)[\s\S]*?(?<leechers>\d+)/g) {
+		my %results_item = %+;
+		$results_item{title} = decode_entities($results_item{title});
+		$results_item{comments} //= 0;
+		push @results_page, \%results_item;
 	}
-	#$last = ! ($page =~ /\G.*next.gif.*/);
-	return \@results;
+	return \@results_page;
 }
 
-sub print_page { #0: reference to results array; 1: index of the first element
-	my @results = @{$_[0]};
+sub print_page {
+	my @results_page = @{$_[0]};
 	my $index = $_[1];
-	foreach(@results) {
+	foreach(@results_page) {
+		my %results_item = %{$_};
 		print "$index: ";
 		print " " if($index < 10);
-		print colored ("@$_[TITLE]", 'bold');
-		if(! defined $opts{i} && @$_[RANK] ne "User") {
+		print colored ("$results_item{title}", 'bold');
+		if(! $args{i} && $results_item{rank}) {
 			print " ";
-			if(@$_[RANK] eq "Trusted")			{print color 'bold white on_magenta';}
-			elsif(@$_[RANK]	eq "VIP")			{print color 'bold white on_green';}
-			elsif(@$_[RANK]	eq "Helper")		{print color 'bold white on_blue';}
-			elsif(@$_[RANK]	eq "Administrator")	{print color 'bold black on_white';}
-			elsif(@$_[RANK]	eq "Moderator")		{print color 'bold black on_white';}
-			print "(☠)";
+			print color $RANK_COLORS{$results_item{rank}};
+			print +SKULL_CROSSBONES;
 			print color 'reset';
 		}
-		print " (@$_[SIZE_VALUE] @$_[SIZE_UNIT]) ";
-		print color 'white on_red' if(@$_[SEEDERS] == 0);
-		print "(@$_[SEEDERS]/@$_[LEECHERS])";
-		print color 'reset' if(@$_[SEEDERS] == 0);
-		if(@$_[COMMENTS] > 0) {
+		print " ($results_item{size_value} $results_item{size_unit}) ";
+		print color +NO_SEEDERS_COLOR if($results_item{seeders} == 0);
+		print "($results_item{seeders}/$results_item{leechers})";
+		print color 'reset' if($results_item{seeders} == 0);
+		if($results_item{comments} > 0) {
 			print " ";
-			print colored ("(@$_[COMMENTS])", 'black on_yellow');
+			print colored ("($results_item{comments})", +COMMENTS_COLOR);
 		}
 		print "\n";
 
-		if(defined $opts{i}) {
+		if($args{i}) {
 			print "    Uploaded by ";
-			if(@$_[RANK] eq "Trusted")			{print color 'white on_magenta';}
-			elsif(@$_[RANK]	eq "VIP")			{print color 'white on_green';}
-			elsif(@$_[RANK]	eq "Helper")		{print color 'white on_blue';}
-			elsif(@$_[RANK]	eq "Administrator")	{print color 'black on_white';}
-			elsif(@$_[RANK]	eq "Moderator")		{print color 'black on_white';}
-			print "@$_[UPLOADER]";
+			print color $RANK_COLORS{$results_item{rank}} if($results_item{rank});
+			print "$results_item{uploader}";
 			print color 'reset';
-			print " on date" if(@$_[DATE] =~ /\d\d-\d\d/);
-			print " @$_[DATE]";
-			if(@$_[DATE_YEAR_TIME] =~ /\d\d:\d\d/) {
+			print " on date" if($results_item{date} =~ /\d\d-\d\d/);
+			print " $results_item{date}";
+			if($results_item{date_year_time} =~ /\d\d:\d\d/) {
 				print " at ";
 			} else {
 				print "-";
 			}
-			print "@$_[DATE_YEAR_TIME]";
-			print " to category @$_[CATEGORY]/@$_[SUB_CATEGORY].\n";
+			print "$results_item{date_year_time}";
+			print " to category $results_item{category}/$results_item{sub_category}.\n";
 		}
-		$index ++;
+		++ $index;
 	}
 }
 
-sub do_page { #0: page number
+sub do_page {
 	my $page_num = $_[0];
-	my @results;
-	if(defined $results_cache[$page_num]) {
-		@results = @{$results_cache[$page_num]};
+	my @results_page;
+	if($results_cache[$page_num]) {
+		@results_page = @{$results_cache[$page_num]};
 	} else {
 		print "Downloading data...\n";
-		@results = @{download_page($keyword, $page_num, $sort)};
-		$results_cache[$page_num] = \@results;
+		@results_page = @{download_page($keyword, $page_num, $sorting)};
+		$results_cache[$page_num] = \@results_page;
 	}
-	print_page(\@results, 1 + 30 * $page_num);
+	print_page(\@results_page, 1 + 30 * $page_num);
 	print "Enter 'n' for next page. Enter 'p' for previous page.\n";
 	print "Enter 'w' to wipe the cache and reload the page. Enter 'q' to quit.\n";
 	print "Enter the numbers of the files you would like to download: ";
-	my $downloads = 0;
 
-	my $thread_previous;
-	$thread_previous =	threads->create('download_page', $keyword, $page_num - 1, $sort) if($page_num > 1 && ! defined $results_cache[$page_num - 1]);
-	my $thread_next;
-	$thread_next=		threads->create('download_page', $keyword, $page_num + 1, $sort) if($page_num < $last_page && ! defined $results_cache[$page_num + 1]);
+	my $thread_previous =	threads->create('download_page', $keyword, $page_num - 1, $sorting) if($page_num > 1 && ! $results_cache[$page_num - 1]);
+	my $thread_next=		threads->create('download_page', $keyword, $page_num + 1, $sorting) if($page_num < $last_page && ! $results_cache[$page_num + 1]);
 
-
-	for(;;) {
-		exit 0 if($downloads > 0);
-		my $input = <STDIN>;
-		my @selected = split /\s+/, "$input";
+	while(1) {
+		my @selected = split /\s+/, <STDIN>;
 		foreach(@selected) {
-			if($_ =~ /\d+/ && $_ > 0 && defined ${$results_cache[$page_num]}[$_ - 1 - 30 * $page_num] <= $#results) {
-				system("xdg-open ${$results_cache[$page_num]}[$_ - 1 - 30 * $page_num][MAGNET] >/dev/null 2>&1");
-				$downloads ++;
+			if($_ =~ /\d+/ && $_ > 0 && ${$results_cache[$page_num]}[$_ - 1 - 30 * $page_num] <= $#results_page) {
+				system("xdg-open ${$results_cache[$page_num]}[$_ - 1 - 30 * $page_num]{magnet} >/dev/null 2>&1");
 			} elsif($_ eq "n") {
 				if($page_num < $last_page) {
 					$thread_previous->kill('KILL')->detach if(defined $thread_previous);
@@ -231,4 +211,5 @@ sub do_page { #0: page number
 	}
 }
 
+# main rutine
 do_page 0
