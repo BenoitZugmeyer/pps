@@ -100,15 +100,20 @@ sub download_page {
 	$SIG{'KILL'} = sub { threads->exit };
 	my $url = BASEURL . "/$keyword/$page_num/$sorting/0";
 	my $page = get "$url" or die "Error getting web: $url";
-	if(! defined $last_page) {
-		$page =~ /approx (\d+?)/g;
-		$last_page = int(int($1) / int(30));
-	}
 	my @results_page;
+	if(! defined $last_page) {
+		$page =~ /approx (\d+)/g;
+		if($1) {
+			$last_page = int(int($1) / int(30));
+		} else {
+			$last_page = -1;
+			return \@results_page;
+		}
+	}
 	while($page =~ /category\">(?<category>.*?)<[\s\S]*?category\">(?<sub_category>.*?)<[\s\S]*?Details for (?<title>.+?)\"[^\"]*\"(?<magnet>magnet:\?.+?)\"(?:.*This torrent has (?<comments>\d+) comments)?(?:.*?(?<rank>VIP|Trusted|Helper|Moderator|Admin))?[\s\S]*?Uploaded (?<date>[^&]+?)&nbsp;(?<date_year_time>\d\d:?\d\d).*?Size (?<size_value>.+?)\&nbsp;(?<size_unit>.*?B).*>(?<uploader>.+?)<[\s\S]*?(?<seeders>\d+)[\s\S]*?(?<leechers>\d+)/g) {
 		my %results_item = %+;
-		$results_item{title} = decode_entities($results_item{title});
-		$results_item{comments} //= 0;
+		$results_item{'title'} = decode_entities($results_item{'title'});
+		$results_item{'comments'} //= 0;
 		push @results_page, \%results_item;
 	}
 	return \@results_page;
@@ -121,37 +126,37 @@ sub print_page {
 		my %results_item = %{$_};
 		print "$index: ";
 		print " " if($index < 10);
-		print colored ("$results_item{title}", 'bold');
-		if(! $args{i} && $results_item{rank}) {
+		print colored ("$results_item{'title'}", 'bold');
+		if(! $args{i} && $results_item{'rank'}) {
 			print " ";
-			print color $RANK_COLORS{$results_item{rank}};
+			print color $RANK_COLORS{$results_item{'rank'}};
 			print +SKULL_CROSSBONES;
 			print color 'reset';
 		}
-		print " ($results_item{size_value} $results_item{size_unit}) ";
-		print color +NO_SEEDERS_COLOR if($results_item{seeders} == 0);
-		print "($results_item{seeders}/$results_item{leechers})";
-		print color 'reset' if($results_item{seeders} == 0);
-		if($results_item{comments} > 0) {
+		print " ($results_item{'size_value'} $results_item{'size_unit'}) ";
+		print color +NO_SEEDERS_COLOR if($results_item{'seeders'} == 0);
+		print "($results_item{'seeders'}/$results_item{'leechers'})";
+		print color 'reset' if($results_item{'seeders'} == 0);
+		if($results_item{'comments'} > 0) {
 			print " ";
-			print colored ("($results_item{comments})", +COMMENTS_COLOR);
+			print colored ("($results_item{'comments'})", +COMMENTS_COLOR);
 		}
 		print "\n";
 
 		if($args{i}) {
 			print "    Uploaded by ";
-			print color $RANK_COLORS{$results_item{rank}} if($results_item{rank});
-			print "$results_item{uploader}";
+			print color $RANK_COLORS{$results_item{'rank'}} if($results_item{'rank'});
+			print "$results_item{'uploader'}";
 			print color 'reset';
-			print " on date" if($results_item{date} =~ /\d\d-\d\d/);
-			print " $results_item{date}";
-			if($results_item{date_year_time} =~ /\d\d:\d\d/) {
+			print " on date" if($results_item{'date'} =~ /\d\d-\d\d/);
+			print " $results_item{'date'}";
+			if($results_item{'date_year_time'} =~ /\d\d:\d\d/) {
 				print " at ";
 			} else {
 				print "-";
 			}
-			print "$results_item{date_year_time}";
-			print " to category $results_item{category}/$results_item{sub_category}.\n";
+			print "$results_item{'date_year_time'}";
+			print " to category $results_item{'category'}/$results_item{'sub_category'}.\n";
 		}
 		++ $index;
 	}
@@ -178,8 +183,15 @@ sub do_page {
 	while(1) {
 		my @selected = split /\s+/, <STDIN>;
 		foreach(@selected) {
-			if($_ =~ /\d+/ && $_ > 0 && ${$results_cache[$page_num]}[$_ - 1 - 30 * $page_num] <= $#results_page) {
-				system("xdg-open ${$results_cache[$page_num]}[$_ - 1 - 30 * $page_num]{magnet} >/dev/null 2>&1");
+			if($_ =~ /\d+/) {
+				if(not @results_page) {
+					print "No torrents found.\n";
+				} elsif($_ > 0 && ${$results_cache[int($_ / 30)]}[$_ - 1 - 30 * $page_num]) {
+					print "Downloading ${$results_cache[int($_ / 30)]}[$_ - 1 - 30 * $page_num]{'title'}.\n";
+					system("xdg-open ${$results_cache[$page_num]}[$_ - 1 - 30 * $page_num]{'magnet'} >/dev/null 2>&1");
+				} else {
+					print "Invalid index.\n";
+				}
 			} elsif($_ eq "n") {
 				if($page_num < $last_page) {
 					$thread_previous->kill('KILL')->detach if(defined $thread_previous);
