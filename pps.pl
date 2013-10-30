@@ -4,6 +4,7 @@ use warnings;
 use LWP::Simple;
 use Term::ANSIColor;
 use HTML::Entities;
+use HTML::PullParser;
 use Getopt::Std;
 use utf8;
 binmode(STDOUT, ":utf8");
@@ -95,14 +96,44 @@ my @results_cache;
 my $last_page;
 
 #functions
+sub get_text {
+	my $r;
+	while($r = $_[0]->get_token() and ($$r[0] ne 'T' or not $$r[1] =~ /^\S/)) {}
+	$$r[1] ? return $$r[1] : return 0;
+}
+
+sub get_stuff {
+	my ($magnet, $comments, $rank);
+	my $r;
+	while($r = $_[0]->get_token() and ($$r[0] ne 'S' or $$r[1] ne 'a')) {}
+	$magnet = $$r[2]{'href'};
+	$r = $_[0]->get_token(); #magnet icon
+	$r = $_[0]->get_token(); $r = $_[0]->get_token() if($$r[1] ne 'img');
+	$comments = $1 if($$r[2]{'alt'} and $$r[2]{'alt'} =~ /^This torrent has (\d+)/);
+	if($comments) {
+		$r = $_[0]->get_token(); $r = $_[0]->get_token() if($$r[1] ne 'img');
+	}
+	if($$r[2]{'alt'} and $$r[2]{'alt'} =~ /cover/) {
+		$r = $_[0]->get_token(); $r = $_[0]->get_token() if($$r[1] ne 'img');
+	}
+	$rank = $$r[2]{'alt'} if($$r[2]{'alt'} and grep($$r[2]{'alt'}, qw(Trusted VIP Admin Moderator)));
+	return ($magnet, $comments // 0, $rank);
+}
+
 sub download_page {
 	(my $keyword, my $page_num, my $sorting) = @_;
 	$SIG{'KILL'} = sub { threads->exit };
 	my $url = BASEURL . "/$keyword/$page_num/$sorting/0";
 	my $page = get "$url" or die "Error getting web: $url";
 	my @results_page;
+	my $p = HTML::PullParser->new(
+		doc   => $page,
+		start => '"S", tag, attr',
+		text  => '"T", text',
+	);
 	if(! defined $last_page) {
-		$page =~ /approx (\d+)/g;
+		while($_ = get_text($p) and not $_ =~ /prox.*? (\d+)/) {}
+		$_ =~ /prox.*? (\d+)/;
 		if($1) {
 			$last_page = int(int($1) / int(30));
 		} else {
@@ -110,10 +141,21 @@ sub download_page {
 			return \@results_page;
 		}
 	}
-	while($page =~ /category\">(?<category>.*?)<[\s\S]*?category\">(?<sub_category>.*?)<[\s\S]*?Details for (?<title>.+?)\"[^\"]*\"(?<magnet>magnet:\?.+?)\"(?:.*This torrent has (?<comments>\d+) comments)?(?:.*?(?<rank>VIP|Trusted|Helper|Moderator|Admin))?[\s\S]*?Uploaded (?<date>[^&]+?)&nbsp;(?<date_year_time>\d\d:?\d\d).*?Size (?<size_value>.+?)\&nbsp;(?<size_unit>.*?B).*>(?<uploader>.+?)<[\s\S]*?(?<seeders>\d+)[\s\S]*?(?<leechers>\d+)/g) {
-		my %results_item = %+;
-		$results_item{'title'} = decode_entities($results_item{'title'});
-		$results_item{'comments'} //= 0;
+	while($_ = get_text($p) and not $_ eq "LE") {}
+	while($_ = get_text($p) and not $_ eq "LE") {}
+	while($_ = get_text($p) and not $_ eq "1&nbsp;") {
+		my %results_item;
+		$results_item{'category'} = $_;
+		$results_item{'sub_category'} = get_text($p);
+		get_text($p);
+		$results_item{'title'} = decode_entities(get_text($p));
+		($results_item{'magnet'}, $results_item{'comments'}, $results_item{'rank'}) = get_stuff($p);
+		get_text($p) =~ /^\w+ ([^&]+)\D+([^,]+), \S+ ([^&]+)[^;]+;([^,]+)/;
+		($results_item{'date'}, $results_item{'date_year_time'}) = ($1, $2);
+		($results_item{'size_value'}, $results_item{'size_unit'}) = ($3, $4);
+		$results_item{'uploader'} = get_text($p);
+		$results_item{'seeders'} = get_text($p);
+		$results_item{'leechers'} = get_text($p);
 		push @results_page, \%results_item;
 	}
 	return \@results_page;
@@ -223,5 +265,5 @@ sub do_page {
 	}
 }
 
-# main rutine
+# main routine
 do_page 0
