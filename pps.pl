@@ -97,9 +97,13 @@ my $last_page;
 
 #functions
 sub get_text {
-	my $r;
-	while($r = $_[0]->get_token() and ($$r[0] ne 'T' or not $$r[1] =~ /^\S/)) {}
-	$$r[1] ? return $$r[1] : return 0;
+	while(my $r = $_[0]->get_token()) {
+		if($r and $$r[0] eq 'T' and $$r[1] =~ /^\S/) {
+			$$r[1] =~ /^\s*(.*?)\s*$/;
+			return $1;
+		}
+	}
+	return undef;
 }
 
 sub get_stuff {
@@ -131,23 +135,24 @@ sub download_page {
 		start => '"S", tag, attr',
 		text  => '"T", text',
 	);
-	if(! defined $last_page) {
-		while($_ = get_text($p) and not $_ =~ /prox.*? (\d+)/) {}
-		$_ =~ /prox.*? (\d+)/;
-		if($1) {
-			$last_page = int(int($1) / int(30));
-		} else {
-			$last_page = -1;
-			return \@results_page;
-		}
+	$p->unbroken_text(1);
+	if(not $last_page) {
+		my $r = get_text($p);
+		while(not $r =~ /^Search results/) { $r = get_text($p); }
+		$r =~ /approx (\d+)/;
+		if($1) { $last_page = int(int($1) / int(30)); }
+		else {$last_page = -1; return \@results_page; }
 	}
 	while($_ = get_text($p) and not $_ eq "LE") {}
-	while($_ = get_text($p) and not $_ eq "LE") {}
-	while($_ = get_text($p) and not $_ eq "1&nbsp;") {
+	my $count = 21;
+	while($count) {
+		-- $count;
 		my %results_item;
-		$results_item{'category'} = $_;
+		$results_item{'category'} = get_text($p);
+		return \@results_page if($results_item{'category'} eq 'Login');
 		$results_item{'sub_category'} = get_text($p);
-		get_text($p);
+		chop($results_item{'sub_category'});
+#		get_text($p);
 		$results_item{'title'} = decode_entities(get_text($p));
 		($results_item{'magnet'}, $results_item{'comments'}, $results_item{'rank'}) = get_stuff($p);
 		get_text($p) =~ /^\w+ ([^&]+)\D+([^,]+), \S+ ([^&]+)[^;]+;([^,]+)/;
@@ -265,5 +270,5 @@ sub do_page {
 	}
 }
 
-# main routine
+# main rutine
 do_page 0
