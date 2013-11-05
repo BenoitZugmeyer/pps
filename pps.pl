@@ -149,7 +149,7 @@ sub download_page {
 		-- $count;
 		my %results_item;
 		$results_item{'category'} = get_text($p);
-		return \@results_page if($results_item{'category'} eq 'Login');
+		return \@results_page if($results_item{'category'} eq 'Login |');
 		$results_item{'sub_category'} = get_text($p);
 		chop($results_item{'sub_category'});
 #		get_text($p);
