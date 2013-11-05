@@ -144,15 +144,11 @@ sub download_page {
 		else {$last_page = -1; return \@results_page; }
 	}
 	while($_ = get_text($p) and not $_ eq "LE") {}
-	my $count = 21;
-	while($count) {
-		-- $count;
+		while($_ = get_text($p) and $_ ne 'Login |') {
 		my %results_item;
-		$results_item{'category'} = get_text($p);
-		return \@results_page if($results_item{'category'} eq 'Login |');
+		$results_item{'category'} = $_;
 		$results_item{'sub_category'} = get_text($p);
 		chop($results_item{'sub_category'});
-#		get_text($p);
 		$results_item{'title'} = decode_entities(get_text($p));
 		($results_item{'magnet'}, $results_item{'comments'}, $results_item{'rank'}) = get_stuff($p);
 		get_text($p) =~ /^\w+ ([^&]+)\D+([^,]+), \S+ ([^&]+)[^;]+;([^,]+)/;
