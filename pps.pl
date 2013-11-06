@@ -146,7 +146,9 @@ sub download_page {
 		else {$last_page = -1; return \@results_page; }
 	}
 	get_text($p, '^LE$');
-	while($_ = get_text($p) and $_ ne 'Login |') {
+	my $count = 30;
+	while($count and $_ = get_text($p) and $_ ne 'Login |') {
+		-- $count;
 		my %results_item;
 		$results_item{'category'} = $_;
 		$results_item{'sub_category'} = get_text($p);
