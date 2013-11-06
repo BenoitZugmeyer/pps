@@ -97,10 +97,13 @@ my $last_page;
 
 #functions
 sub get_text {
+	#$_[1] = find the next text string that matches this regex. If not given, find any text string.
+	my $pattern = qr/$_[1]/ if($_[1]);
 	while(my $r = $_[0]->get_token()) {
 		if($r and $$r[0] eq 'T' and $$r[1] =~ /^\S/) {
 			$$r[1] =~ /^\s*(.*?)\s*$/;
-			return $1;
+			my $blah = $1;
+			return $blah if(not $_[1] or $blah =~ /$pattern/);
 		}
 	}
 	return undef;
@@ -137,14 +140,13 @@ sub download_page {
 	);
 	$p->unbroken_text(1);
 	if(not $last_page) {
-		my $r = get_text($p);
-		while(not $r =~ /^Search results/) { $r = get_text($p); }
+		my $r = get_text($p, '^Search results');
 		$r =~ /approx (\d+)/;
 		if($1) { $last_page = int(int($1) / int(30)); }
 		else {$last_page = -1; return \@results_page; }
 	}
-	while($_ = get_text($p) and not $_ eq "LE") {}
-		while($_ = get_text($p) and $_ ne 'Login |') {
+	get_text($p, '^LE$');
+	while($_ = get_text($p) and $_ ne 'Login |') {
 		my %results_item;
 		$results_item{'category'} = $_;
 		$results_item{'sub_category'} = get_text($p);
