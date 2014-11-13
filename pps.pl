@@ -184,7 +184,7 @@ sub do_page {
 					print "No torrents found.\n";
 				} elsif($_ > 0 && ${$results_cache[int($_ / 30)]}[$_ - 1 - 30 * $page_num]) {
 					print "Downloading ${$results_cache[int($_ / 30)]}[$_ - 1 - 30 * $page_num]{'title'}.\n";
-					system("xdg-open ${$results_cache[$page_num]}[$_ - 1 - 30 * $page_num]{'magnet'} >/dev/null 2>&1");
+					system("xdg-open '${$results_cache[$page_num]}[$_ - 1 - 30 * $page_num]{'magnet'}' >/dev/null 2>&1");
 				} else {
 					print "Invalid index.\n";
 				}
